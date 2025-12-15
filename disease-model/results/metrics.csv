@@ -1,0 +1,2 @@
+filename,model_name,model_version,rmse_aggregate,mae_aggregate,crps,ratio_within_10th_90th,ratio_within_25th_75th,test_sample_count
+baseline_eval.nc,http://localhost:8080,unknown,4.989154065716681,3.480100502512563,2.152888262148427,0.5961735937064885,0.41196306739069893,35700.0

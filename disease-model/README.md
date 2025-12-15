@@ -1,0 +1,125 @@
+# disease-model
+
+ML service for disease-model
+
+This project was scaffolded using the [Chapkit](https://dhis2-chap.github.io/chapkit) CLI.
+
+## Quick Start
+
+### Development Mode
+
+Install dependencies and run the service locally:
+
+```bash
+uv sync
+uv run python main.py
+```
+
+The API will be available at http://localhost:8000
+
+### Docker
+
+Build and run with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The API will be available at:
+- API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+
+## API Endpoints
+
+### Health Check
+
+```bash
+curl http://localhost:8000/health
+```
+
+### Configuration Management
+
+Create a configuration:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/configs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-config",
+    "data": {}
+  }'
+```
+
+### ML Operations
+
+Train a model:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ml/\$train \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config_id": "YOUR_CONFIG_ID",
+    "data": {
+      "feature_1": [1, 2, 3],
+      "feature_2": [4, 5, 6],
+      "target": [7, 8, 9]
+    }
+  }'
+```
+
+Make predictions:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ml/\$predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "YOUR_MODEL_ID",
+    "future": {
+      "feature_1": [1, 2],
+      "feature_2": [3, 4]
+    }
+  }'
+```
+
+## Customization
+
+### Update Model Configuration
+
+Edit the configuration class in `main.py`:
+
+```python
+class DiseaseModelConfig(BaseConfig):
+    # Add your parameters here
+    min_samples: int = 5
+    learning_rate: float = 0.01
+```
+
+### Customize Training
+
+Edit the `on_train` function in `main.py` to implement your model training logic.
+
+### Customize Prediction
+
+Edit the `on_predict` function in `main.py` to implement your prediction logic.
+
+## Project Structure
+
+```
+disease_model/
+├── main.py              # Main application file
+├── pyproject.toml       # Python dependencies
+├── Dockerfile           # Docker build configuration
+├── compose.yml          # Docker Compose configuration
+├── data/                # Database directory
+│   └── chapkit.db       # SQLite database (persisted)
+```
+
+## Documentation
+
+- [Chapkit Documentation](https://dhis2-chap.github.io/chapkit)
+- [FastAPI Documentation](https://fastapi.tiangolo.com)
+- [Servicekit Documentation](https://winterop-com.github.io/servicekit)
+
+## License
+
+Add your license information here.

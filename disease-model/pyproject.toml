@@ -1,0 +1,29 @@
+[project]
+name = "disease_model"
+version = "0.1.0"
+description = "Spatio-temporal disease prediction model using darts"
+requires-python = ">=3.13"
+dependencies = [
+    "chapkit>=0.10.3",
+    "pandas>=2.3.3",
+    "darts>=0.31.0",
+    "numpy>=1.26.0",
+    "scikit-learn>=1.6.0",
+]
+
+[dependency-groups]
+dev = [
+    "uvicorn[standard]>=0.30.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "chap-python-sdk",
+]
+
+[tool.uv.sources]
+chap-python-sdk = { path = "/Users/knutdr/Sources/chap-python-sdk", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
