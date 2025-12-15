@@ -26,7 +26,7 @@ class DiseaseModelConfig(BaseConfig):
 
     lags: int = 12
     lags_past_covariates: int = 12
-    output_chunk_length: int = 1
+    output_chunk_length: int = 3  # Direct 3-step prediction (no auto-regression needed)
     n_samples: int = 100
     min_dispersion: float = 1.0  # Minimum overdispersion factor
     dispersion_scale: float = 0.1  # Scale factor for dispersion (lower = wider intervals)
@@ -272,27 +272,11 @@ async def on_predict(
             else:
                 combined_target = last_target
 
-            # Prepare future covariates
-            future_covariates = None
-            if last_covariates is not None:
-                _, future_cov_series = _prepare_time_series(
-                    loc_future, location, covariate_cols=covariate_cols
-                )
-                if future_cov_series is not None:
-                    if covariate_series is not None:
-                        try:
-                            future_covariates = covariate_series.append(future_cov_series)
-                        except Exception:
-                            future_covariates = future_cov_series
-                    else:
-                        future_covariates = future_cov_series
-
             try:
                 # Generate predictions
                 predictions = loc_model.predict(
                     n=n_periods,
                     series=combined_target,
-                    past_covariates=future_covariates,
                 )
 
                 # Generate samples using prediction uncertainty
@@ -339,10 +323,10 @@ async def on_predict(
 
 # Service metadata
 info = MLServiceInfo(
-    display_name="Darts Disease Model",
-    version="1.4.0",
-    summary="Spatio-temporal disease prediction using darts time series library",
-    description="Uses RandomForestRegressor with climate covariates (rainfall, temperature) and Fourier seasonal features for disease case forecasting.",
+    display_name="Darts Disease Model (No Future Weather)",
+    version="2.0.0",
+    summary="Spatio-temporal disease prediction without future weather data",
+    description="Uses RandomForestRegressor with historical climate covariates and Fourier seasonal features. Does not require future weather predictions.",
     author="CHAP Team",
     author_assessed_status=AssessedStatus.yellow,
     contact_email="chap@example.com",
