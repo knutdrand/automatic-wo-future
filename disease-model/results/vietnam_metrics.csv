@@ -1,2 +1,2 @@
 filename,model_name,model_version,rmse_aggregate,mae_aggregate,crps,ratio_within_10th_90th,ratio_within_25th_75th,test_sample_count
-vietnam_eval.nc,http://localhost:8081,unknown,270.3387213490728,142.90756892230576,47.89573283208019,0.9924812030075189,0.8972431077694235,39900.0
+vietnam_eval.nc,http://localhost:8081,unknown,87.64140382353766,53.46491228070175,47.89573283208019,0.9924812030075189,0.8972431077694235,39900.0

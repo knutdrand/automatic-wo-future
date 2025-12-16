@@ -1,0 +1,2 @@
+filename,model_name,model_version,rmse_aggregate,mae_aggregate,crps,ratio_within_10th_90th,ratio_within_25th_75th,test_sample_count
+nbeats_global_12splits.nc,http://localhost:8091,unknown,93.77321669407651,34.69900497512438,27.032913068181813,0.963023088023088,0.7490079365079365,104400.0

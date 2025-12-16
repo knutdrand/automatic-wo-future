@@ -1,2 +1,2 @@
 filename,model_name,model_version,rmse_aggregate,mae_aggregate,crps,ratio_within_10th_90th,ratio_within_25th_75th,test_sample_count
-thailand_transformer_v1_eval.nc,http://localhost:8088,unknown,60.024389344993054,29.895042735042736,23.925887103174603,0.6918934240362812,0.5028344671201814,60900.0
+thailand_transformer_v1_eval.nc,http://localhost:8088,unknown,60.76137296378715,28.203418803418803,23.925887103174603,0.6918934240362812,0.5028344671201814,60900.0

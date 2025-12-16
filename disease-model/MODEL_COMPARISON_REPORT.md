@@ -33,11 +33,11 @@ Both files must be saved as bytes and restored to the same directory during pred
 
 | Model | RMSE | MAE | CRPS | Coverage 10-90% | Coverage 25-75% | File |
 |-------|------|-----|------|-----------------|-----------------|------|
-| **Original LSTM** | 120.90 | 41.67 | 15.49 | 88.1% | 63.3% | `main.py` |
-| **LSTM v4** | 60.09 | 30.75 | 22.87 | 76.4% | 60.8% | `main_lstm.py` |
-| **TCN** | 115.18 | 38.17 | 15.42 | 87.1% | 68.5% | `main_tcn.py` |
-| **N-BEATS** | 61.34 | **25.92** | **12.59** | 67.0% | 47.2% | `main_nbeats.py` |
-| **Transformer** | **60.02** | 29.90 | 23.93 | 69.2% | 50.3% | `main_transformer.py` |
+| **N-BEATS** | **32.78** | **17.12** | **12.59** | 67.0% | 47.2% | `main_nbeats.py` |
+| **Original LSTM** | 34.08 | 18.86 | 15.49 | **88.1%** | 63.3% | `main.py` |
+| **TCN** | 44.29 | 20.20 | 15.42 | 87.1% | **68.5%** | `main_tcn.py` |
+| **LSTM v4** | 60.20 | 27.40 | 22.87 | 76.4% | 60.8% | `main_lstm.py` |
+| **Transformer** | 60.76 | 28.20 | 23.93 | 69.2% | 50.3% | `main_transformer.py` |
 
 **Best metrics highlighted in bold**
 
@@ -47,14 +47,14 @@ The original model (`main.py`) was evaluated across three countries:
 
 | Country | RMSE | MAE | CRPS | Coverage 10-90% | Coverage 25-75% | Samples |
 |---------|------|-----|------|-----------------|-----------------|---------|
-| **Thailand** | 120.90 | 41.67 | 15.49 | 88.1% | 63.3% | 60,900 |
-| **Laos** | 248.12 | 95.62 | 55.93 | 82.3% | 53.1% | 14,700 |
-| **Vietnam** | 270.34 | 142.91 | 47.90 | 99.2% | 89.7% | 39,900 |
+| **Thailand** | 34.08 | 18.86 | 15.49 | 88.1% | 63.3% | 60,900 |
+| **Vietnam** | 87.64 | 53.46 | 47.90 | 99.2% | 89.7% | 39,900 |
+| **Laos** | 225.90 | 77.44 | 55.93 | 82.3% | 53.1% | 14,700 |
 
 **Observations**:
 - Thailand has the best overall metrics (lowest RMSE, MAE, CRPS)
-- Vietnam has the widest prediction intervals (highest coverage) but worst point accuracy
-- Laos has moderate coverage but high CRPS, suggesting poor probabilistic calibration
+- Vietnam has the widest prediction intervals (highest coverage) but higher point errors
+- Laos has the highest RMSE/CRPS - likely due to smaller sample size (14,700 vs 60,900)
 
 ---
 
@@ -72,13 +72,13 @@ The original model (`main.py`) was evaluated across three countries:
 - `n_epochs`: 50
 
 **Metrics** (Thailand):
-- RMSE: 120.90
-- MAE: 41.67
+- RMSE: 34.08
+- MAE: 18.86
 - CRPS: 15.49
 - Coverage 10-90%: 88.1% (well-calibrated)
 - Coverage 25-75%: 63.3%
 
-**Assessment**: Good uncertainty calibration but higher point prediction error compared to newer model variants. Serves as the baseline for comparison.
+**Assessment**: Second-best point accuracy and excellent uncertainty calibration. Serves as a strong baseline.
 
 ---
 
@@ -94,13 +94,13 @@ The original model (`main.py`) was evaluated across three countries:
 - `n_epochs`: 50
 
 **Metrics**:
-- RMSE: 60.09 (50% improvement over baseline)
-- MAE: 30.75
+- RMSE: 60.20
+- MAE: 27.40
 - CRPS: 22.87
 - Coverage 10-90%: 76.4% (slight under-coverage)
 - Coverage 25-75%: 60.8%
 
-**Assessment**: Best overall balance of point accuracy and uncertainty calibration. Recommended for production use.
+**Assessment**: Moderate point accuracy with reasonable calibration. Uses proper model serialization.
 
 **Note**: LSTM v1-v3 had broken uncertainty estimation (0% coverage) due to serialization issues. v4 fixed this.
 
@@ -119,17 +119,17 @@ The original model (`main.py`) was evaluated across three countries:
 - `n_epochs`: 50
 
 **Metrics**:
-- RMSE: 115.18 (worst - high variance predictions)
-- MAE: 38.17
-- CRPS: 15.42 (second best)
-- Coverage 10-90%: 87.1% (best coverage but intervals too wide)
-- Coverage 25-75%: 68.5%
+- RMSE: 44.29
+- MAE: 20.20
+- CRPS: 15.42
+- Coverage 10-90%: 87.1% (well-calibrated)
+- Coverage 25-75%: 68.5% (best inner interval)
 
-**Assessment**: Poor point accuracy (high RMSE) despite good CRPS. Prediction intervals are well-calibrated but the model is generating high-variance predictions. Not recommended without hyperparameter tuning.
+**Assessment**: Good balance of point accuracy and calibration. Third-best RMSE with excellent coverage metrics.
 
 ---
 
-### 3. NBEATS (Neural Basis Expansion Analysis)
+### 3. N-BEATS (Neural Basis Expansion Analysis)
 
 **File**: `main_nbeats.py`
 
@@ -143,13 +143,13 @@ The original model (`main.py`) was evaluated across three countries:
 - `n_epochs`: 30
 
 **Metrics**:
-- RMSE: 61.34 (similar to LSTM)
-- MAE: 25.92 (best MAE!)
-- CRPS: 12.59 (best CRPS!)
+- RMSE: 32.78 (best!)
+- MAE: 17.12 (best!)
+- CRPS: 12.59 (best!)
 - Coverage 10-90%: 67.0% (under-coverage)
 - Coverage 25-75%: 47.2% (under-coverage)
 
-**Assessment**: Best CRPS and MAE scores, but uncertainty intervals are too narrow (under-coverage). Needs dispersion calibration adjustment. Consider increasing `dispersion_scale` parameter.
+**Assessment**: Best point accuracy (RMSE, MAE) and probabilistic accuracy (CRPS). However, uncertainty intervals are too narrow (under-coverage). Consider increasing `dispersion_scale` parameter for better calibration.
 
 ---
 
@@ -168,35 +168,38 @@ The original model (`main.py`) was evaluated across three countries:
 - `n_epochs`: 30
 
 **Metrics**:
-- RMSE: 60.02 (best RMSE!)
-- MAE: 29.90
+- RMSE: 60.76
+- MAE: 28.20
 - CRPS: 23.93
-- Coverage 10-90%: 69.2% (slight under-coverage)
+- Coverage 10-90%: 69.2% (under-coverage)
 - Coverage 25-75%: 50.3%
 
-**Assessment**: Best RMSE (point accuracy), but uncertainty calibration could be improved. Similar to LSTM but with faster training for small models.
+**Assessment**: Moderate point accuracy with under-calibrated uncertainty intervals. Needs tuning for this dataset.
 
 ---
 
 ## Recommendations
 
+### For Best Point Accuracy
+**N-BEATS** is the top performer with:
+- Best RMSE (32.78), MAE (17.12), and CRPS (12.59)
+- However, needs `dispersion_scale` tuning for better coverage
+
+### For Best Calibration
+**Original Model** (`main.py`) or **TCN** recommended:
+- Original: 88.1% coverage (target 80%), good point accuracy (RMSE 34.08)
+- TCN: 87.1% coverage, best inner interval (68.5%)
+
 ### For Production Use
-**LSTM v4 (BlockRNNModel)** is recommended due to:
-- Best uncertainty calibration (76% coverage for 80% interval)
-- Good point accuracy (RMSE ~60, 50% improvement over baseline)
-- Stable training
-
-### For Point Prediction (if uncertainty less critical)
-**Transformer** or **N-BEATS** offer slightly better point accuracy metrics.
-
-### For Best Probabilistic Forecasts
-**N-BEATS** has the best CRPS (12.59) but needs wider prediction intervals.
+Consider **Original Model** as it offers:
+- Second-best RMSE (34.08)
+- Best uncertainty calibration (88.1% coverage)
+- Simpler architecture, proven stability
 
 ### Future Improvements
-1. **N-BEATS**: Increase `dispersion_scale` to widen prediction intervals and improve coverage
-2. **TCN**: Reduce model complexity or tune hyperparameters to reduce prediction variance
-3. **Transformer**: Tune `dispersion_scale` for better coverage
-4. **Cross-country**: Investigate why Laos/Vietnam have much higher errors - may need country-specific hyperparameters
+1. **N-BEATS**: Increase `dispersion_scale` to widen prediction intervals (currently 67% vs target 80%)
+2. **Transformer/LSTM v4**: Tune hyperparameters - currently underperforming compared to simpler models
+3. **Cross-country**: Investigate Laos high error (RMSE 225.90) - may need country-specific tuning or more training data
 
 ---
 
