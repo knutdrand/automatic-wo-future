@@ -25,7 +25,6 @@ class DiseaseModelConfig(BaseConfig):
     """Configuration for disease prediction model."""
 
     lags: int = 12
-    lags_past_covariates: int = 12
     output_chunk_length: int = 3  # Direct 3-step prediction (no auto-regression needed)
     n_samples: int = 100
     min_dispersion: float = 1.0  # Minimum overdispersion factor
@@ -165,18 +164,18 @@ async def on_train(
         try:
             model = RegressionModel(
                 lags=config.lags,
-                lags_past_covariates=config.lags_past_covariates if covariate_series else None,
+                lags_past_covariates=None,  # No covariates needed during prediction
                 output_chunk_length=config.output_chunk_length,
                 model=RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42),
             )
 
-            model.fit(target_series, past_covariates=covariate_series)
+            model.fit(target_series, past_covariates=None)
 
             # Compute in-sample residuals to estimate overdispersion
             try:
                 fitted_values = model.historical_forecasts(
                     target_series,
-                    past_covariates=covariate_series,
+                    past_covariates=None,
                     start=config.lags,
                     forecast_horizon=1,
                     stride=1,
@@ -263,13 +262,22 @@ async def on_predict(
                 historic_df, location, covariate_cols=covariate_cols
             )
 
-            if target_series is not None:
-                # Concatenate with last training data
+            # Combine training target with any new historic data
+            if target_series is not None and target_series.end_time() > last_target.end_time():
+                # Historic extends beyond training - append the new portion
                 try:
-                    combined_target = last_target.append(target_series)
+                    combined_target = last_target.append(target_series.slice_intersect(
+                        last_target.append(target_series)  # This will fail, use slice instead
+                    ))
                 except Exception:
-                    combined_target = target_series
+                    # Slice to get only the portion after last_target
+                    new_portion = target_series.drop_before(last_target.end_time())
+                    if len(new_portion) > 0:
+                        combined_target = last_target.append(new_portion)
+                    else:
+                        combined_target = last_target
             else:
+                # Historic doesn't extend training - use full training target
                 combined_target = last_target
 
             try:

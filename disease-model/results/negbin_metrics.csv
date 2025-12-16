@@ -1,2 +1,0 @@
-filename,model_name,model_version,rmse_aggregate,mae_aggregate,crps,ratio_within_10th_90th,ratio_within_25th_75th,test_sample_count
-negbin_eval.nc,http://localhost:8080,unknown,6.305353870893047,4.002814070351759,1.9970679894179895,0.6844637635756058,0.5355994152046782,35700.0
