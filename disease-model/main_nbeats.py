@@ -1,8 +1,9 @@
 """Spatio-temporal disease prediction model using darts.
 
-This model uses BlockRNNModel (LSTM) with historical weather as past_covariates.
-BlockRNNModel is a "block" model that predicts output_chunk_length steps at once,
-meaning when n <= output_chunk_length, it doesn't need future covariate values.
+This model uses NBEATSModel (Neural Basis Expansion Analysis for Time Series)
+with historical weather as past_covariates. NBEATSModel is a "block" model that
+predicts output_chunk_length steps at once, meaning when n <= output_chunk_length,
+it doesn't need future covariate values.
 
 Features used:
 - Historical disease cases (target)
@@ -11,6 +12,8 @@ Features used:
 """
 
 import os
+import pickle
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +21,7 @@ import numpy as np
 import pandas as pd
 import structlog
 from darts import TimeSeries
-from darts.models import BlockRNNModel
+from darts.models import NBEATSModel
 from geojson_pydantic import FeatureCollection
 
 from chapkit import BaseConfig
@@ -33,11 +36,13 @@ log = structlog.get_logger()
 class DiseaseModelConfig(BaseConfig):
     """Configuration for disease prediction model."""
 
-    input_chunk_length: int = 12  # Look-back window for LSTM
+    input_chunk_length: int = 12  # Look-back window for NBEATS
     output_chunk_length: int = 3  # Direct 3-step prediction
-    hidden_dim: int = 32  # LSTM hidden layer size
-    n_rnn_layers: int = 2  # Number of stacked LSTM layers
-    n_epochs: int = 50  # Training epochs
+    num_stacks: int = 10  # Number of stacks in NBEATS (reduced for speed)
+    num_blocks: int = 1  # Number of blocks per stack
+    num_layers: int = 2  # Number of fully-connected layers per block (reduced)
+    layer_widths: int = 64  # Width of each layer (reduced for speed)
+    n_epochs: int = 30  # Training epochs (reduced for speed)
     batch_size: int = 32  # Training batch size
     n_samples: int = 100  # Monte Carlo samples for uncertainty
     min_dispersion: float = 1.0  # Minimum overdispersion factor
@@ -156,7 +161,7 @@ async def on_train(
     data: DataFrame,
     geo: FeatureCollection | None = None,
 ) -> Any:
-    """Train BlockRNNModel (LSTM) per location with historical weather covariates."""
+    """Train NBEATSModel per location with historical weather covariates."""
     df = data.to_pandas()
     locations = df["location"].unique().tolist()
 
@@ -175,15 +180,15 @@ async def on_train(
             continue
 
         try:
-            # BlockRNNModel with LSTM - supports past_covariates
+            # NBEATSModel - supports past_covariates
             # When n <= output_chunk_length, no future covariate values are needed
-            model = BlockRNNModel(
+            model = NBEATSModel(
                 input_chunk_length=config.input_chunk_length,
                 output_chunk_length=config.output_chunk_length,
-                model="LSTM",
-                hidden_dim=config.hidden_dim,
-                n_rnn_layers=config.n_rnn_layers,
-                dropout=0.1,
+                num_stacks=config.num_stacks,
+                num_blocks=config.num_blocks,
+                num_layers=config.num_layers,
+                layer_widths=config.layer_widths,
                 batch_size=config.batch_size,
                 n_epochs=config.n_epochs,
                 random_state=42,
@@ -224,10 +229,29 @@ async def on_train(
                 log.warning("dispersion_estimation_failed", location=location, error=str(e))
                 dispersion = config.min_dispersion
 
+            # Save model using darts' native serialization
+            # Darts creates TWO files: .pt (model state) and .pt.ckpt (PyTorch Lightning checkpoint)
+            # Both are required for proper loading
+            with tempfile.TemporaryDirectory() as tmpdir:
+                model_path = os.path.join(tmpdir, "model.pt")
+                model.save(model_path)
+
+                # Read both files
+                with open(model_path, "rb") as f:
+                    model_bytes = f.read()
+                ckpt_path = model_path + ".ckpt"
+                with open(ckpt_path, "rb") as f:
+                    ckpt_bytes = f.read()
+
+            # Serialize TimeSeries using pickle (they work fine)
+            target_bytes = pickle.dumps(target_series)
+            cov_bytes = pickle.dumps(covariate_series) if covariate_series else None
+
             models[location] = {
-                "model": model,
-                "last_target": target_series,
-                "last_covariates": covariate_series,
+                "model_bytes": model_bytes,  # Darts .pt file
+                "ckpt_bytes": ckpt_bytes,  # PyTorch Lightning .ckpt file
+                "target_bytes": target_bytes,  # Pickled TimeSeries
+                "cov_bytes": cov_bytes,  # Pickled TimeSeries or None
                 "dispersion": dispersion,
             }
             training_stats[location] = {
@@ -303,7 +327,7 @@ async def on_predict(
     future: DataFrame,
     geo: FeatureCollection | None = None,
 ) -> DataFrame:
-    """Generate predictions using trained LSTM models."""
+    """Generate predictions using trained NBEATS models."""
     models = model["models"]
     covariate_cols = model["covariate_cols"]
 
@@ -323,9 +347,26 @@ async def on_predict(
             mean_val = historic_df["disease_cases"].fillna(0).mean()
             samples = [[max(0, mean_val)] * config.n_samples for _ in range(n_periods)]
         else:
-            loc_model = models[location]["model"]
-            last_target = models[location]["last_target"]
-            last_covariates = models[location]["last_covariates"]
+            # Load model from bytes using darts' native deserialization
+            # Must restore BOTH .pt and .pt.ckpt files to same temp directory
+            model_bytes = models[location]["model_bytes"]
+            ckpt_bytes = models[location]["ckpt_bytes"]
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                model_path = os.path.join(tmpdir, "model.pt")
+                ckpt_path = model_path + ".ckpt"
+
+                with open(model_path, "wb") as f:
+                    f.write(model_bytes)
+                with open(ckpt_path, "wb") as f:
+                    f.write(ckpt_bytes)
+
+                loc_model = NBEATSModel.load(model_path)
+
+            # Load TimeSeries from pickled bytes
+            last_target = pickle.loads(models[location]["target_bytes"])
+            cov_bytes = models[location]["cov_bytes"]
+            last_covariates = pickle.loads(cov_bytes) if cov_bytes else None
             dispersion = models[location].get("dispersion", config.min_dispersion)
 
             # Update target series with historic data if available
@@ -424,10 +465,10 @@ async def on_predict(
 
 # Service metadata
 info = MLServiceInfo(
-    display_name="LSTM Disease Model (Historical Weather)",
-    version="5.0.0",
-    summary="Spatio-temporal disease prediction using LSTM with historical weather",
-    description="Uses BlockRNNModel (LSTM) with past_covariates for historical climate data (rainfall, temperature) and Fourier seasonal features. Future predictions use seasonal features only.",
+    display_name="NBEATS Disease Model (Historical Weather)",
+    version="1.0.0",
+    summary="Spatio-temporal disease prediction using NBEATS with historical weather",
+    description="Uses NBEATSModel (Neural Basis Expansion Analysis) with past_covariates for historical climate data (rainfall, temperature) and Fourier seasonal features. Future predictions use seasonal features only.",
     author="CHAP Team",
     author_assessed_status=AssessedStatus.yellow,
     contact_email="chap@example.com",
@@ -462,4 +503,4 @@ app = (
 if __name__ == "__main__":
     from chapkit.api import run_app
 
-    run_app("main:app")
+    run_app("main_nbeats:app")

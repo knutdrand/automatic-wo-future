@@ -1,0 +1,2 @@
+filename,model_name,model_version,rmse_aggregate,mae_aggregate,crps,ratio_within_10th_90th,ratio_within_25th_75th,test_sample_count
+thailand_lstm_v4_eval.nc,http://localhost:8085,unknown,60.08822957396343,30.748393162393164,22.865104478458047,0.7636054421768709,0.6079931972789115,60900.0

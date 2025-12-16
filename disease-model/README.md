@@ -44,15 +44,24 @@ Input: time_period, location, disease_cases (historical)
     Output: sample_0, sample_1, ..., sample_99
 ```
 
-## Why No Future Weather?
+## Why No Weather Data?
 
-Traditional disease prediction models often use weather forecasts (rainfall, temperature) as predictors. However:
+Traditional disease prediction models often use weather data (rainfall, temperature) as covariates. However, this creates challenges:
 
-1. **Weather forecasts degrade quickly**: Accuracy drops significantly beyond 7-10 days
-2. **Seasonal climate data is uncertain**: Monthly/seasonal forecasts have wide confidence intervals
+1. **Future weather requires forecasts**: Weather forecasts degrade quickly beyond 7-10 days
+2. **darts covariate limitations**: Even models with `past_covariates` require covariate values extending into the forecast horizon during prediction
 3. **Spurious correlations**: Models may overfit to weather patterns that don't generalize
 
-This model instead captures weather effects implicitly through:
+### Technical Note: darts Covariate Behavior
+
+We investigated using historical weather during training with darts models:
+- `RegressionModel` with `lags_past_covariates` requires covariates during prediction
+- `BlockRNNModel`, `TCNModel`, `NBEATSModel` with `past_covariates` also need covariate values at prediction time
+- Even with `output_chunk_length >= prediction_horizon`, these models require covariates extending into the forecast window
+
+**Conclusion**: For truly weather-independent prediction with darts, we use only target series features.
+
+This model captures weather effects implicitly through:
 - **Fourier seasonal features**: Encode the annual cycle when weather-driven outbreaks typically occur
 - **Autoregressive lags**: Recent case counts reflect current environmental conditions
 
@@ -165,8 +174,8 @@ The model expects CSV data with columns:
 - `time_period`: Date string (e.g., "2019-01", "2019-01-21/2019-01-27")
 - `location`: Geographic unit identifier
 - `disease_cases`: Target variable (non-negative integers)
-- `rainfall`: (optional, used for training context only)
-- `mean_temperature`: (optional, used for training context only)
+
+**Note**: Weather columns (`rainfall`, `mean_temperature`) may be present in the data but are **not used** by this model. Weather effects are captured implicitly through seasonal features.
 
 ## Project Structure
 

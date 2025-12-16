@@ -11,6 +11,8 @@ Features used:
 """
 
 import os
+import pickle
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -224,10 +226,29 @@ async def on_train(
                 log.warning("dispersion_estimation_failed", location=location, error=str(e))
                 dispersion = config.min_dispersion
 
+            # Save model using darts' native serialization
+            # Darts creates TWO files: .pt (model state) and .pt.ckpt (PyTorch Lightning checkpoint)
+            # Both are required for proper loading
+            with tempfile.TemporaryDirectory() as tmpdir:
+                model_path = os.path.join(tmpdir, "model.pt")
+                model.save(model_path)
+
+                # Read both files
+                with open(model_path, "rb") as f:
+                    model_bytes = f.read()
+                ckpt_path = model_path + ".ckpt"
+                with open(ckpt_path, "rb") as f:
+                    ckpt_bytes = f.read()
+
+            # Serialize TimeSeries using pickle (they work fine)
+            target_bytes = pickle.dumps(target_series)
+            cov_bytes = pickle.dumps(covariate_series) if covariate_series else None
+
             models[location] = {
-                "model": model,
-                "last_target": target_series,
-                "last_covariates": covariate_series,
+                "model_bytes": model_bytes,  # Darts .pt file
+                "ckpt_bytes": ckpt_bytes,  # PyTorch Lightning .ckpt file
+                "target_bytes": target_bytes,  # Pickled TimeSeries
+                "cov_bytes": cov_bytes,  # Pickled TimeSeries or None
                 "dispersion": dispersion,
             }
             training_stats[location] = {
@@ -323,9 +344,26 @@ async def on_predict(
             mean_val = historic_df["disease_cases"].fillna(0).mean()
             samples = [[max(0, mean_val)] * config.n_samples for _ in range(n_periods)]
         else:
-            loc_model = models[location]["model"]
-            last_target = models[location]["last_target"]
-            last_covariates = models[location]["last_covariates"]
+            # Load model from bytes using darts' native deserialization
+            # Must restore BOTH .pt and .pt.ckpt files to same temp directory
+            model_bytes = models[location]["model_bytes"]
+            ckpt_bytes = models[location]["ckpt_bytes"]
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                model_path = os.path.join(tmpdir, "model.pt")
+                ckpt_path = model_path + ".ckpt"
+
+                with open(model_path, "wb") as f:
+                    f.write(model_bytes)
+                with open(ckpt_path, "wb") as f:
+                    f.write(ckpt_bytes)
+
+                loc_model = BlockRNNModel.load(model_path)
+
+            # Load TimeSeries from pickled bytes
+            last_target = pickle.loads(models[location]["target_bytes"])
+            cov_bytes = models[location]["cov_bytes"]
+            last_covariates = pickle.loads(cov_bytes) if cov_bytes else None
             dispersion = models[location].get("dispersion", config.min_dispersion)
 
             # Update target series with historic data if available
@@ -462,4 +500,4 @@ app = (
 if __name__ == "__main__":
     from chapkit.api import run_app
 
-    run_app("main:app")
+    run_app("main_lstm:app")
