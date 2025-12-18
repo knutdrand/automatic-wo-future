@@ -1,14 +1,14 @@
 # Disease Prediction Model (No Future Weather)
 
-A CHAP-compatible spatio-temporal disease prediction model that forecasts disease cases using only historical data. Unlike models that require future weather predictions, this model uses autoregressive features and seasonal patterns that can be computed without external forecasts.
+A CHAP-compatible spatio-temporal disease prediction model using N-BEATS architecture. This model forecasts disease cases using only historical data, without requiring future weather predictions.
 
 ## Key Features
 
 - **No Future Weather Required**: Predictions rely solely on historical disease case patterns
+- **N-BEATS Architecture**: Neural Basis Expansion Analysis for interpretable time series forecasting
 - **Fourier Seasonal Encoding**: Captures annual and semi-annual disease cycles
-- **Negative Binomial Uncertainty**: Proper count data uncertainty quantification with overdispersion
-- **Per-Location Models**: Trains separate RandomForest models for each geographic location
-- **Direct Multi-Step Forecasting**: Predicts multiple time steps without autoregressive error accumulation
+- **Calibrated Uncertainty**: Negative binomial distribution tuned for ~80% prediction interval coverage
+- **Per-Location Models**: Trains separate models for each geographic location
 
 ## Model Architecture
 
@@ -25,18 +25,18 @@ Input: time_period, location, disease_cases (historical)
                     │
                     ▼
     ┌───────────────────────────────┐
-    │  RandomForest Regressor       │
-    │  - 100 estimators             │
-    │  - max_depth = 10             │
-    │  - Per-location training      │
+    │  N-BEATS Model (per location) │
+    │  - 10 stacks, 1 block each    │
+    │  - 2 layers, width 64         │
+    │  - 30 epochs training         │
     └───────────────────────────────┘
                     │
                     ▼
     ┌───────────────────────────────┐
     │  Uncertainty Quantification   │
-    │  - Learned dispersion from    │
-    │    in-sample residuals        │
     │  - Negative Binomial sampling │
+    │  - Dispersion from residuals  │
+    │  - dispersion_scale = 0.03    │
     │  - 100 Monte Carlo samples    │
     └───────────────────────────────┘
                     │
@@ -44,36 +44,15 @@ Input: time_period, location, disease_cases (historical)
     Output: sample_0, sample_1, ..., sample_99
 ```
 
-## Why No Weather Data?
-
-Traditional disease prediction models often use weather data (rainfall, temperature) as covariates. However, this creates challenges:
-
-1. **Future weather requires forecasts**: Weather forecasts degrade quickly beyond 7-10 days
-2. **darts covariate limitations**: Even models with `past_covariates` require covariate values extending into the forecast horizon during prediction
-3. **Spurious correlations**: Models may overfit to weather patterns that don't generalize
-
-### Technical Note: darts Covariate Behavior
-
-We investigated using historical weather during training with darts models:
-- `RegressionModel` with `lags_past_covariates` requires covariates during prediction
-- `BlockRNNModel`, `TCNModel`, `NBEATSModel` with `past_covariates` also need covariate values at prediction time
-- Even with `output_chunk_length >= prediction_horizon`, these models require covariates extending into the forecast window
-
-**Conclusion**: For truly weather-independent prediction with darts, we use only target series features.
-
-This model captures weather effects implicitly through:
-- **Fourier seasonal features**: Encode the annual cycle when weather-driven outbreaks typically occur
-- **Autoregressive lags**: Recent case counts reflect current environmental conditions
-
 ## Configuration
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `lags` | 12 | Number of historical periods for autoregression |
+| `input_chunk_length` | 12 | Historical periods for autoregression |
 | `output_chunk_length` | 3 | Direct prediction horizon (months) |
 | `n_samples` | 100 | Monte Carlo samples for uncertainty |
+| `dispersion_scale` | 0.03 | Calibrated for ~80% coverage |
 | `min_dispersion` | 1.0 | Minimum overdispersion factor |
-| `dispersion_scale` | 0.1 | Scale for uncertainty width (lower = wider intervals) |
 
 ## Installation
 
@@ -87,7 +66,7 @@ uv sync
 ### Start the Model Server
 
 ```bash
-uv run uvicorn main:app --port 8080
+uv run uvicorn main_nbeats:app --port 8080
 ```
 
 ### Run Evaluation with chap-core
@@ -117,21 +96,40 @@ chap generate-pdf-report output.nc report.pdf
 
 ## Performance
 
-Evaluated on Southeast Asian dengue datasets:
+Evaluated on Southeast Asian dengue datasets (12-split backtesting):
 
-| Country   | RMSE | MAE | CRPS | Coverage 10-90 | Coverage 25-75 |
-|-----------|------|-----|------|----------------|----------------|
-| Thailand  | 121  | 42  | 15.5 | 88%            | 63%            |
-| Vietnam   | 270  | 143 | 47.9 | 99%            | 90%            |
-| Laos      | 248  | 96  | 55.9 | 82%            | 53%            |
+| Country   | RMSE  | 80% Coverage | Notes |
+|-----------|-------|--------------|-------|
+| Thailand  | 95.8  | 83%          | Well-calibrated |
+| Vietnam   | 147.0 | 70%          | Under-coverage |
+| Laos      | 193.5 | 58%          | Under-coverage |
 
-Target coverage for 10-90 prediction interval is 80%.
+Target coverage for 10th-90th percentile prediction interval is 80%.
+
+## Why N-BEATS?
+
+N-BEATS was selected after extensive model comparison:
+
+| Model | RMSE | CRPS | 80% Coverage |
+|-------|------|------|--------------|
+| **N-BEATS** | **32.8** | **12.6** | 67% → 83% (calibrated) |
+| LSTM | 34.1 | 15.5 | 88% |
+| TCN | 44.3 | 15.4 | 87% |
+| Transformer | 60.8 | 23.9 | 69% |
+
+N-BEATS achieves the best point accuracy (RMSE, CRPS). With `dispersion_scale=0.03` tuning, it also achieves good uncertainty calibration.
 
 ## Technical Details
 
-### Seasonal Features
+### Why No Weather Data?
 
-The model uses Fourier encoding to capture cyclical disease patterns:
+Traditional disease prediction models use weather data as covariates. However:
+
+1. **Future weather requires forecasts**: Weather forecasts degrade quickly beyond 7-10 days
+2. **darts limitations**: Even `past_covariates` models require covariate values extending into the forecast horizon
+3. **Implicit encoding**: Seasonal patterns capture weather effects through Fourier features
+
+### Seasonal Features
 
 ```python
 # Annual cycle (12-month period)
@@ -143,55 +141,48 @@ month_sin2 = sin(4π × month / 12)
 month_cos2 = cos(4π × month / 12)
 ```
 
-This captures both:
-- **Unimodal patterns**: Single annual peak (e.g., monsoon-driven outbreaks)
-- **Bimodal patterns**: Two peaks per year (e.g., post-monsoon + dry season)
+### Uncertainty Calibration
 
-### Uncertainty Quantification
-
-Disease counts exhibit overdispersion (variance > mean), so we use the Negative Binomial distribution:
+Disease counts exhibit overdispersion (variance > mean). The Negative Binomial distribution models this:
 
 ```
 Var(Y) = μ + μ²/r
 ```
 
-Where:
-- `μ` = predicted mean from RandomForest
-- `r` = dispersion parameter (learned from residuals)
+Where `r = dispersion × dispersion_scale`. Lower `dispersion_scale` → wider intervals → higher coverage.
 
-The dispersion is estimated per-location from in-sample prediction errors, then scaled by `dispersion_scale` to calibrate prediction intervals.
-
-### Direct Multi-Step Prediction
-
-Setting `output_chunk_length=3` enables direct 3-step forecasting:
-- The model learns to predict 3 future values simultaneously
-- Avoids error accumulation from iterative single-step predictions
-- Critical for removing dependency on future covariate values
+The `dispersion_scale=0.03` was tuned to achieve ~80% coverage on Thailand data.
 
 ## Input Data Format
 
-The model expects CSV data with columns:
+CSV with columns:
 - `time_period`: Date string (e.g., "2019-01", "2019-01-21/2019-01-27")
 - `location`: Geographic unit identifier
 - `disease_cases`: Target variable (non-negative integers)
 
-**Note**: Weather columns (`rainfall`, `mean_temperature`) may be present in the data but are **not used** by this model. Weather effects are captured implicitly through seasonal features.
+Weather columns (`rainfall`, `mean_temperature`) may be present but are not used.
 
 ## Project Structure
 
 ```
 disease-model/
-├── main.py              # Model implementation
-├── pyproject.toml       # Dependencies
-├── Dockerfile           # Container build
-├── compose.yml          # Docker Compose config
-├── results/             # Evaluation outputs
-│   ├── *_eval.nc        # NetCDF evaluation data
-│   ├── *_metrics.csv    # Performance metrics
-│   ├── *_backtest.html  # Interactive plots
-│   └── *_report.pdf     # PDF reports
-└── tests/               # Unit tests
+├── main_nbeats.py           # Production model (recommended)
+├── main_nbeats_v2.py        # Experimental: population normalization
+├── main_lstm.py             # Alternative: LSTM model
+├── main_tcn.py              # Alternative: TCN model
+├── main_transformer.py      # Alternative: Transformer model
+├── pyproject.toml           # Dependencies
+├── Dockerfile               # Container build
+├── results/                 # Evaluation outputs
+└── docs/
+    └── EXPERIMENTAL_MODELS.md  # Documentation for alternatives
 ```
+
+## Further Documentation
+
+- [MODEL_COMPARISON_REPORT.md](MODEL_COMPARISON_REPORT.md) - Detailed model comparison
+- [NBEATS_INVESTIGATION_REPORT.md](NBEATS_INVESTIGATION_REPORT.md) - N-BEATS tuning experiments
+- [docs/EXPERIMENTAL_MODELS.md](docs/EXPERIMENTAL_MODELS.md) - Alternative model implementations
 
 ## API Endpoints
 
@@ -210,3 +201,4 @@ MIT
 - [CHAP - Climate Health Analytics Platform](https://github.com/dhis2-chap)
 - [chapkit - ML Service Framework](https://dhis2-chap.github.io/chapkit)
 - [darts - Time Series Library](https://github.com/unit8co/darts)
+- [N-BEATS Paper](https://arxiv.org/abs/1905.10437)
